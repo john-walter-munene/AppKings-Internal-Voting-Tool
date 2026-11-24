@@ -10,7 +10,7 @@ import { get, put } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
 function Nominate() {
-  const { phase, rules } = useAuth();
+  const { phase } = useAuth();
   const [categories, setCategories] = useState([]);
   const [colleagues, setColleagues] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -20,7 +20,6 @@ function Nominate() {
   const [categoryId, setCategoryId] = useState('');
   const [nomineeId, setNomineeId] = useState('');
   const [nomineeTeamId, setNomineeTeamId] = useState('');
-  const [justification, setJustification] = useState('');
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState(null); // the nomination being replaced
 
@@ -28,8 +27,6 @@ function Nominate() {
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const minLength = rules?.minJustification ?? 20;
 
   const load = async () => {
     setLoading(true);
@@ -50,7 +47,6 @@ function Nominate() {
         const existing = mineData.nominations.find((nomination) => nomination.categoryId === first.id);
         setCategoryId(first.id);
         setEditingId(existing ? existing.id : null);
-        setJustification(existing?.justification ?? '');
         if (first.forTeams) setNomineeTeamId(existing?.nomineeTeamId || '');
         else setNomineeId(existing?.nomineeId || '');
       }
@@ -86,7 +82,6 @@ function Nominate() {
   const fillFrom = (list, id) => {
     const existing = list.find((nomination) => nomination.categoryId === id);
     setEditingId(existing ? existing.id : null);
-    setJustification(existing?.justification ?? '');
     setSearch('');
     const target = categories.find((item) => item.id === id);
     if (target?.forTeams) {
@@ -117,7 +112,6 @@ function Nominate() {
     setCategoryId(next.id);
     setNomineeId('');
     setNomineeTeamId('');
-    setJustification('');
     setSearch('');
     setEditingId(null);
     return next;
@@ -131,7 +125,6 @@ function Nominate() {
       const result = await put('/nominations', {
         categoryId,
         ...(isTeamCategory ? { nomineeTeamId } : { nomineeId }),
-        justification,
       });
       const saved = {
         ...result.nomination,
@@ -163,13 +156,36 @@ function Nominate() {
   };
 
   const canSubmit =
-    categoryId && justification.trim().length >= minLength && (isTeamCategory ? nomineeTeamId : nomineeId);
+    categoryId && (isTeamCategory ? nomineeTeamId : nomineeId);
+  const completedCount = categories.filter((item) =>
+    mine.some((nomination) => nomination.categoryId === item.id)
+  ).length;
+  const allNominationsComplete = categories.length > 0 && completedCount === categories.length;
 
   return (
-    <AppShell title="Nominate a colleague" description="One nomination per colleague per category. Justify every nomination." minRole="EMPLOYEE">
-      {phase !== 'PHASE_1' && (
+    <AppShell title="Nominate a colleague" description="One nomination per category." minRole="EMPLOYEE">
+      {!loading && phase !== 'PHASE_1' && (
         <Alert tone="warning" className="mb-4">
-          Nominations are not open right now (current phase: {phase}). You can review what you have already submitted.
+          {phase === 'NOT_STARTED'
+            ? 'Nominations are not open yet. You can review saved submissions, but cannot submit or edit them right now.'
+            : 'Phase 1 has closed. You can review your nominations, but can no longer edit them.'}
+        </Alert>
+      )}
+
+      {!loading && phase === 'PHASE_1' && categories.length > 0 && (
+        <Alert tone={allNominationsComplete ? 'success' : 'info'} className="mb-4">
+          {allNominationsComplete ? (
+            <>
+              <strong>All nominations complete.</strong> You have submitted nominations for all {categories.length}{' '}
+              categories. You can still edit or replace them until Phase 1 closes; select a saved category below to make
+              changes.
+            </>
+          ) : (
+            <>
+              <strong>Nominations in progress.</strong> You have completed {completedCount} of {categories.length}{' '}
+              categories. You can edit or replace any saved nomination until Phase 1 closes.
+            </>
+          )}
         </Alert>
       )}
 
@@ -244,7 +260,9 @@ function Nominate() {
           <p className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">{category.criteria}</p>
           {existingInCategory && (
             <p className="mt-2 text-xs text-amber-700">
-              You can update this nomination until Phase 1 closes.
+              {phase === 'PHASE_1'
+                ? 'You can update this nomination until Phase 1 closes.'
+                : 'Phase 1 has closed, so this nomination can no longer be changed.'}
             </p>
           )}
         </div>
@@ -316,24 +334,6 @@ function Nominate() {
           </div>
         )}
 
-        <div>
-          <label className="label" htmlFor="justification">
-            Justification
-          </label>
-          <textarea
-            id="justification"
-            className="input min-h-[120px]"
-            placeholder="Give examples: what did they do, when, and what was the outcome? Include links to evidence if useful."
-            value={justification}
-            onChange={(event) => setJustification(event.target.value)}
-            maxLength={1000}
-            disabled={phase !== 'PHASE_1'}
-          />
-          <p className={`mt-1 text-xs ${justification.trim().length < minLength ? 'text-slate-500' : 'text-emerald-700'}`}>
-            {justification.trim().length} / {minLength} characters minimum
-          </p>
-        </div>
-
         <button type="submit" className="btn-primary w-full sm:w-auto" disabled={!canSubmit || phase !== 'PHASE_1' || busy}>
           {busy ? 'Saving…' : existingInCategory ? 'Save changes' : 'Save nomination and continue'}
         </button>
@@ -360,7 +360,6 @@ function Nominate() {
                     </p>
                     <StatusPill tone="brand">{nomination.categoryName}</StatusPill>
                   </div>
-                  <p className="mt-1 text-sm text-slate-600">{nomination.justification}</p>
                   <span className="mt-2 block text-xs font-medium text-brand-700">Edit nomination</span>
                 </button>
               </li>
